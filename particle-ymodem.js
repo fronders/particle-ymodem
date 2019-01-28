@@ -10,6 +10,7 @@ var LightYModem = module.exports = function LightYModem(){
 	self.ymodem = null;
 	self.consoleLog = console.log;
 	self.progressCb = console.log;
+	self.finishedCb = console.log;
 
 	self.write = function write(packet, cb){
 		var timer;
@@ -53,7 +54,10 @@ var LightYModem = module.exports = function LightYModem(){
 			self.send_filename_header("", 0, function(){
 				self.consoleLog('header sent');
 			});
-			setTimeout(function(){ self.ymodem.close();},0);
+			setTimeout(function(){ 
+				self.consoleLog('finished');
+				self.finishedCb();
+			},0);
 		});
 	};
 
@@ -93,18 +97,19 @@ var LightYModem = module.exports = function LightYModem(){
 		self.ymodem = ymodem;
 		self.consoleLog = consoleOutput || self.consoleLog;
 		self.progressCb = progressCb || self.progressCb;
+		self.finishedCb = finishedCb;
 
 		self.ymodem.on('error', function(msg){
 			self.consoleLog('Error', msg);
 		});
-		self.ymodem.on('close', function(){
-			self.consoleLog('finished');
-			finishedCb();
-		});
-		self.ymodem.on('open', function (error) {
-			if(error){
-				console.log('open 2 error', error);
-			}
+		// self.ymodem.on('close', function(){
+		// 	self.consoleLog('finished');
+		// 	finishedCb();
+		// });
+		// self.ymodem.on('open', function (error) {
+		// 	if(error){
+		// 		console.log('open 2 error', error);
+		// 	}
 			self.ymodem.on('data', function(data) {
 				if(data.length <= 2){
 					for(var x=0;x<data.length;x++){
@@ -127,8 +132,8 @@ var LightYModem = module.exports = function LightYModem(){
 				});
 			});
 
-		});
-		self.ymodem.open();
+		// });
+		// self.ymodem.open();
 	}
 
 	return self;
