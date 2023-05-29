@@ -1,6 +1,6 @@
 {
   "name": "particle-ymodem",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Basic implementation of the Ymodem-protocol as implemented in Particle devices. Currently created and tested only to send firmware files to a Particle Photon.",
   "main": "particle-ymodem.js",
   "scripts": {
@@ -11,17 +11,17 @@
   },
   "repository": {
     "type": "git",
-    "url": "git@github.com:nicodegunst/particle-ymodem.git"
+    "url": "git@github.com:fronders/particle-ymodem.git"
   },
   "keywords": [
     "particle",
     "photon",
     "ymodem"
   ],
-  "author": "Nico de Gunst",
+  "author": "fronders",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/nicodegunst/particle-ymodem/issues"
+    "url": "https://github.com/fronders/particle-ymodem/issues"
   },
-  "homepage": "https://github.com/nicodegunst/particle-ymodem"
+  "homepage": "https://github.com/fronders/particle-ymodem"
 }
