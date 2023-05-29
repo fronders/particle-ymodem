@@ -1,4 +1,6 @@
 'use strict';
+const fs = require('fs')
+const path = require('path');
 
 var LightYModem = module.exports = function LightYModem() {
     if (typeof this === 'undefined') {
@@ -26,15 +28,29 @@ var LightYModem = module.exports = function LightYModem() {
         return packet.length;
     }
 
-    self._send_ymodem_packet = function _send_ymodem_packet(data, cb) {
-        data = Buffer.concat([data, Buffer(LightYModem.packet_len - data.length)], LightYModem.packet_len);
+    self._get_packet_len = function _get_packet_len(mark) {
+        var packet_len;
+        if (mark === LightYModem.soh) {
+            packet_len = LightYModem.packet_len_soh
+        } else if (mark === LightYModem.stx) {
+            packet_len = LightYModem.packet_len_stx
+        } else { 
+            throw ('packet mark is wrong!');
+        }
+        return packet_len;
+    }
 
-        var seqchr = new Buffer([self.seq & 0xFF]);
-        var seqchr_neg = new Buffer([(-self.seq - 1) & 0xFF]);
-        var crc16 = new Buffer([0x00, 0x00]);
+    self._send_ymodem_packet = function _send_ymodem_packet(mark, data, cb) {
+        var packet_len = self._get_packet_len(mark);
+        data = Buffer.concat([data, Buffer.alloc(packet_len - data.length)], packet_len);
 
-        var packet = Buffer.concat([(new Buffer([LightYModem.packet_mark])), seqchr, seqchr_neg, data, crc16]);
-        if (packet.length != LightYModem.expected_packet_len) {
+        var pktmark = Buffer.from([mark & 0xFF])
+        var seqchr = Buffer.from([self.seq & 0xFF]);
+        var seqchr_neg = Buffer.from([(-self.seq - 1) & 0xFF]);
+        var crc16 = Buffer.from([0x00, 0x00]);
+
+        var packet = Buffer.concat([pktmark, seqchr, seqchr_neg, data, crc16]);
+        if (packet.length != packet_len + LightYModem.packet_len_overhead) {
             throw ('packet length is wrong!');
         }
 
@@ -49,10 +65,10 @@ var LightYModem = module.exports = function LightYModem() {
 
     self._send_close = function _send_close() {
         self.consoleLog('closing');
-        self.ymodem.write(Buffer([LightYModem.eot]), function () {
+        self.ymodem.write(Buffer.from([LightYModem.eot]), function () {
             self.consoleLog('eot sent');
-            self.send_filename_header("", 0, function () {
-                self.consoleLog('header sent');
+            self.send_filename_header('', function () {
+                self.consoleLog('empty header sent');
             });
             setTimeout(function () {
                 self.consoleLog('finished');
@@ -62,9 +78,11 @@ var LightYModem = module.exports = function LightYModem() {
     };
 
     self.send_packet = function send_packet(file, cb) {
+        const mark = LightYModem.packet_mark;
         var sendSlice = function (offset) {
-            var lower = offset * LightYModem.packet_len;
-            var higher = ((offset + 1) * LightYModem.packet_len);
+            var packet_len = self._get_packet_len(mark);
+            var lower = offset * packet_len;
+            var higher = ((offset + 1) * packet_len);
             var end = false;
             if (higher >= file.length) {
                 higher = file.length;
@@ -77,7 +95,7 @@ var LightYModem = module.exports = function LightYModem() {
                 cb();
             } else {
                 var buf = file.slice(lower, higher);
-                self._send_ymodem_packet(buf, function () {
+                self._send_ymodem_packet(mark, buf, function () {
                     sendSlice(offset + 1);
                 });
             }
@@ -85,11 +103,22 @@ var LightYModem = module.exports = function LightYModem() {
         sendSlice(0);
     }
 
-    self.send_filename_header = function send_filename_header(name, size, cb) {
-        self.seq = 0;
-        var filenameHeader = new Buffer(name + ' ' + size + ' ');
-        filenameHeader[name.length] = 0;
-        self._send_ymodem_packet(filenameHeader, cb);
+    self.send_filename_header = function send_filename_header(file, cb) {
+        self.seq = 0;   // reset sequence number
+        var filenameHeader;
+        if (file !== '' && fs.existsSync(file)) {
+            // constuct file info header
+            const stats = fs.statSync(file)
+            const fileName = path.parse(file).base
+            const fileSize = stats.size.toString();
+            const modTime = Math.floor(stats.mtimeMs / 1000).toString(8);
+            const unixFilePermissions = '100' + (stats.mode & parseInt('777', 8)).toString(8);
+            filenameHeader = Buffer.from(fileName + '\0' + fileSize + ' ' + modTime + ' ' + unixFilePermissions);  
+        } else {
+            filenameHeader = Buffer.alloc(0);
+        }
+        self.consoleLog('header ' + filenameHeader.toString('hex'));
+        self._send_ymodem_packet(LightYModem.header_mark, filenameHeader, cb);
     }
 
 
@@ -97,7 +126,8 @@ var LightYModem = module.exports = function LightYModem() {
         self.ymodem = ymodem;
         self.consoleLog = consoleOutput || self.consoleLog;
         self.progressCb = progressCb || self.progressCb;
-        self.finishedCb = finishedCb;
+        self.finishedCb = finishedCb || self.finishedCb;
+        const file_data = fs.readFileSync(file);
 
         self.ymodem.on('error', function (msg) {
             self.consoleLog('Error', msg);
@@ -123,10 +153,9 @@ var LightYModem = module.exports = function LightYModem() {
                 self.consoleLog('message received: ' + data.toString().trim());
             }
         });
-
-        self.send_filename_header('binary', file.length, function () {
+        self.send_filename_header(file, function () {
             self.consoleLog('done header');
-            self.send_packet(file, function (response) {
+            self.send_packet(file_data, function (response) {
                 self.consoleLog('done file');
                 self._send_close();
             });
@@ -148,11 +177,11 @@ LightYModem.crc16 = 0x43;  // 67
 LightYModem.abort1 = 0x41; // 65
 LightYModem.abort2 = 0x61; // 97
 
-// 1K blocks does not seem to work
-// LightYModem.packet_len = 1024;
-// LightYModem.expected_packet_len = LightYModem.packet_len + 5;
-// LightYModem.packet_mark = LightYModem.stx;
+LightYModem.packet_len_overhead = 5;
+LightYModem.packet_len_soh = 128;
+LightYModem.packet_len_stx = 1024;
 
-LightYModem.packet_len = 128;
-LightYModem.packet_mark = LightYModem.soh;
-LightYModem.expected_packet_len = LightYModem.packet_len + 5;
+LightYModem.header_mark = LightYModem.soh;
+// LightYModem.packet_mark = LightYModem.soh;  // 128B blocks
+LightYModem.packet_mark = LightYModem.stx;  // 1kB blocks
+
