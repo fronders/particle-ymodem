@@ -4,6 +4,7 @@ Fork changelog:
 - added crc to packets, previously it was forced `00 00 ¯\_(ツ)_/¯`
 - fixed header packet with file info (filename, size, modtime and attributes)
 - moved fs inside the module
+- added last packet EOF `0x1A` padding
 
 Basic implementation of the Ymodem-protocol as used in Particle devices. Currently created and tested only to send firmware files to a Particle Photon.
 
