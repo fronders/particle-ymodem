@@ -23,9 +23,10 @@ var serialPort = require("serialport");
 var filepath = './firmware.bin';
 var serialPort = new serialPort.SerialPort('/dev/cu.usbmodemfd131', { baudrate: 28800 }, false);
 var progressCallback = function (val) { console.log(Math.round(val.current * 100 / val.total) + '%'); }
+var finishedCallback = function () { console.log('File transfer finished'); }
 var logCallback = console.log;
 
-var modem = new lightYModem();
-modem.transfer(filepath, serialPort, progressCallback, logCallback);
+var ymodem = new lightYModem();
+ymodem.transfer(filepath, serialPort, progressCallback, finishedCallback, logCallback);
 ```
 
