@@ -1,6 +1,7 @@
 'use strict';
 const fs = require('fs')
 const path = require('path');
+const crc16 = require('crc/calculators/crc16xmodem');
 
 var LightYModem = module.exports = function LightYModem() {
     if (typeof this === 'undefined') {
@@ -10,15 +11,15 @@ var LightYModem = module.exports = function LightYModem() {
 
     self.seq = 0;
     self.ymodem = null;
-    self.consoleLog = console.log;
-    self.progressCb = console.log;
-    self.finishedCb = console.log;
+    self.consoleLog = function() {};
+    self.progressCb = function() {};
+    self.finishedCb = function() {};
 
     self.write = function write(packet, cb) {
         var timer;
         self.ymodem.write(packet, function (err, res) {
             if (err) {
-                self.consoleLog('Error:', err);
+                self.consoleLog('error:', err);
             } else if (res === -1) {
                 self.consoleLog('result is -1'); // res values are undocumented, it seems like an error, and when it is send, the callback is called twice.
             } else if (cb) {
@@ -43,20 +44,19 @@ var LightYModem = module.exports = function LightYModem() {
     self._send_ymodem_packet = function _send_ymodem_packet(mark, data, cb) {
         var packet_len = self._get_packet_len(mark);
         data = Buffer.concat([data, Buffer.alloc(packet_len - data.length)], packet_len);
-
         var pktmark = Buffer.from([mark & 0xFF])
         var seqchr = Buffer.from([self.seq & 0xFF]);
         var seqchr_neg = Buffer.from([(-self.seq - 1) & 0xFF]);
-        var crc16 = Buffer.from([0x00, 0x00]);
-
-        var packet = Buffer.concat([pktmark, seqchr, seqchr_neg, data, crc16]);
+        var crc = Buffer.allocUnsafe(2);
+        crc.writeUInt16BE(crc16(data))
+        var packet = Buffer.concat([pktmark, seqchr, seqchr_neg, data, crc]);
         if (packet.length != packet_len + LightYModem.packet_len_overhead) {
             throw ('packet length is wrong!');
         }
 
         self.ymodem.once('data', function (data) {
             var response = data[0];
-            // self.consoleLog('sent packet nr ' + self.seq);
+            self.consoleLog('sent packet #', self.seq);
             self.seq += 1;
             cb(response);
         });
@@ -80,15 +80,14 @@ var LightYModem = module.exports = function LightYModem() {
     self.send_packet = function send_packet(file, cb) {
         const mark = LightYModem.packet_mark;
         var sendSlice = function (offset) {
-            var packet_len = self._get_packet_len(mark);
+            const packet_len = self._get_packet_len(mark);
             var lower = offset * packet_len;
             var higher = ((offset + 1) * packet_len);
-            var end = false;
             if (higher >= file.length) {
                 higher = file.length;
             }
             self.progressCb({
-                current: lower,
+                current: lower < file.length ? lower : file.length,
                 total: file.length
             });
             if (lower >= file.length) {
@@ -117,7 +116,7 @@ var LightYModem = module.exports = function LightYModem() {
         } else {
             filenameHeader = Buffer.alloc(0);
         }
-        self.consoleLog('header ' + filenameHeader.toString('hex'));
+        self.consoleLog('header', filenameHeader.toString('hex'));
         self._send_ymodem_packet(LightYModem.header_mark, filenameHeader, cb);
     }
 
@@ -130,27 +129,27 @@ var LightYModem = module.exports = function LightYModem() {
         const file_data = fs.readFileSync(file);
 
         self.ymodem.on('error', function (msg) {
-            self.consoleLog('Error', msg);
+            self.consoleLog('error:', msg);
         });
-        // self.ymodem.on('close', function(){
+        // self.ymodem.on('close', function() {
         //     self.consoleLog('finished');
         //     finishedCb();
         // });
         // self.ymodem.on('open', function (error) {
-        //     if(error){
-        //         console.log('open 2 error', error);
+        //     if(error) {
+        //         self.consoleLog('open 2 error', error);
         //     }
         self.ymodem.on('data', function (data) {
             if (data.length <= 2) {
                 for (var x = 0; x < data.length; x++) {
                     for (var key in LightYModem) {
                         if (data[x] === LightYModem[key]) {
-                            self.consoleLog('cmd received: ' + key);
+                            self.consoleLog('cmd received:', key);
                         }
                     }
                 }
             } else {
-                self.consoleLog('message received: ' + data.toString().trim());
+                self.consoleLog('message received:', data.toString().trim());
             }
         });
         self.send_filename_header(file, function () {
