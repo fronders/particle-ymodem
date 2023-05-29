@@ -94,6 +94,11 @@ var LightYModem = module.exports = function LightYModem() {
                 cb();
             } else {
                 var buf = file.slice(lower, higher);
+                if (higher - lower < packet_len) {
+                    // add last packet EOF padding
+                    var padding = Buffer.alloc(packet_len - buf.length, LightYModem.packet_eof_fill)
+                    buf = Buffer.concat([buf, padding], packet_len);
+                }
                 self._send_ymodem_packet(mark, buf, function () {
                     sendSlice(offset + 1);
                 });
@@ -176,6 +181,7 @@ LightYModem.crc16 = 0x43;  // 67
 LightYModem.abort1 = 0x41; // 65
 LightYModem.abort2 = 0x61; // 97
 
+LightYModem.packet_eof_fill = 0x1A; // 26
 LightYModem.packet_len_overhead = 5;
 LightYModem.packet_len_soh = 128;
 LightYModem.packet_len_stx = 1024;
